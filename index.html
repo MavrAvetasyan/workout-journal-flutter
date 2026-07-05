@@ -14,11 +14,19 @@
     This is a placeholder for base href that will be replaced by the value of
     the `--base-href` argument provided to `flutter build`.
   -->
-  <base href="/">
+  <base id="app-base" href="/">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="A new Flutter project.">
+  <script>
+    (function () {
+      var base = document.getElementById('app-base');
+      var repoBase = '/workout-journal-flutter/';
+      var isGitHubPages = window.location.hostname === 'mavravetasyan.github.io';
+      base.setAttribute('href', isGitHubPages ? repoBase : '/');
+    })();
+  </script>
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
