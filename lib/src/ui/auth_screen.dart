@@ -56,12 +56,15 @@ class _AuthScreenState extends State<AuthScreen> {
                           const SectionKicker('Аккаунт'),
                           const SizedBox(height: 8),
                           Text(
-                            _registerMode ? 'Создать аккаунт' : 'Войти в журнал тренировок',
+                            _registerMode
+                                ? 'Создать аккаунт'
+                                : 'Войти в журнал тренировок',
                             style: Theme.of(context).textTheme.headlineMedium,
                           ),
                           const SizedBox(height: 12),
                           const MetaLine(
-                            'Пока переносим мобильную версию шаг за шагом. Вход сохраняет локальную сессию, чтобы можно было продолжать работу в приложении.',
+                            'Данные хранятся на сервере и синхронизируются между устройствами. '
+                            'После входа можно продолжать работу не только на этом телефоне.',
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
@@ -69,7 +72,9 @@ class _AuthScreenState extends State<AuthScreen> {
                             keyboardType: TextInputType.emailAddress,
                             decoration: const InputDecoration(labelText: 'Email'),
                             validator: (value) {
-                              if (value == null || value.trim().isEmpty || !value.contains('@')) {
+                              if (value == null ||
+                                  value.trim().isEmpty ||
+                                  !value.contains('@')) {
                                 return 'Введи email';
                               }
                               return null;
@@ -79,7 +84,8 @@ class _AuthScreenState extends State<AuthScreen> {
                           TextFormField(
                             controller: _passwordController,
                             obscureText: !_showPassword,
-                            decoration: const InputDecoration(labelText: 'Пароль'),
+                            decoration:
+                                const InputDecoration(labelText: 'Пароль'),
                             validator: (value) {
                               if (value == null || value.trim().length < 6) {
                                 return 'Минимум 6 символов';
@@ -92,18 +98,24 @@ class _AuthScreenState extends State<AuthScreen> {
                             value: _showPassword,
                             title: const Text('Показать пароль'),
                             contentPadding: EdgeInsets.zero,
-                            onChanged: (value) => setState(() => _showPassword = value),
+                            onChanged: (value) =>
+                                setState(() => _showPassword = value),
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton(
                             onPressed: _submit,
-                            child: Text(_registerMode ? 'Создать аккаунт' : 'Войти'),
+                            child: Text(
+                              _registerMode ? 'Создать аккаунт' : 'Войти',
+                            ),
                           ),
                           const SizedBox(height: 10),
                           OutlinedButton(
-                            onPressed: () => setState(() => _registerMode = !_registerMode),
+                            onPressed: () =>
+                                setState(() => _registerMode = !_registerMode),
                             child: Text(
-                              _registerMode ? 'У меня уже есть аккаунт' : 'Создать аккаунт',
+                              _registerMode
+                                  ? 'У меня уже есть аккаунт'
+                                  : 'Создать аккаунт',
                             ),
                           ),
                         ],
