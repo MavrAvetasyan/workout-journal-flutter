@@ -16,19 +16,23 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _registerMode = false;
-  bool _showPassword = false;
+  final _codeController = TextEditingController();
+
+  bool _codeRequested = false;
+  bool _submitting = false;
+  String? _debugCode;
 
   @override
   void dispose() {
     _emailController.dispose();
-    _passwordController.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final isCodeStep = _codeRequested;
+
     return Scaffold(
       body: DecoratedBox(
         decoration: const BoxDecoration(
@@ -56,19 +60,21 @@ class _AuthScreenState extends State<AuthScreen> {
                           const SectionKicker('Аккаунт'),
                           const SizedBox(height: 8),
                           Text(
-                            _registerMode
-                                ? 'Создать аккаунт'
-                                : 'Войти в журнал тренировок',
+                            isCodeStep
+                                ? 'Подтверди вход кодом'
+                                : 'Войти по коду из письма',
                             style: Theme.of(context).textTheme.headlineMedium,
                           ),
                           const SizedBox(height: 12),
-                          const MetaLine(
-                            'Данные хранятся на сервере и синхронизируются между устройствами. '
-                            'После входа можно продолжать работу не только на этом телефоне.',
+                          MetaLine(
+                            isCodeStep
+                                ? 'Мы отправили код на ${_emailController.text.trim()}. Введи его ниже.'
+                                : 'Введи почту. Мы отправим код входа красивым письмом без пароля.',
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
                             controller: _emailController,
+                            enabled: !isCodeStep && !_submitting,
                             keyboardType: TextInputType.emailAddress,
                             decoration: const InputDecoration(labelText: 'Email'),
                             validator: (value) {
@@ -80,44 +86,67 @@ class _AuthScreenState extends State<AuthScreen> {
                               return null;
                             },
                           ),
-                          const SizedBox(height: 14),
-                          TextFormField(
-                            controller: _passwordController,
-                            obscureText: !_showPassword,
-                            decoration:
-                                const InputDecoration(labelText: 'Пароль'),
-                            validator: (value) {
-                              if (value == null || value.trim().length < 6) {
-                                return 'Минимум 6 символов';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 10),
-                          SwitchListTile.adaptive(
-                            value: _showPassword,
-                            title: const Text('Показать пароль'),
-                            contentPadding: EdgeInsets.zero,
-                            onChanged: (value) =>
-                                setState(() => _showPassword = value),
-                          ),
-                          const SizedBox(height: 16),
+                          if (isCodeStep) ...[
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: _codeController,
+                              enabled: !_submitting,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Код из письма',
+                              ),
+                              validator: (value) {
+                                if (!isCodeStep) return null;
+                                if (value == null || value.trim().length < 4) {
+                                  return 'Введи код';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
+                          if (_debugCode != null) ...[
+                            const SizedBox(height: 16),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF3F7FF),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: const Color(0xFFD9E6FF),
+                                ),
+                              ),
+                              child: Text(
+                                'Тестовый код: $_debugCode',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 18),
                           ElevatedButton(
-                            onPressed: _submit,
+                            onPressed: _submitting
+                                ? null
+                                : (isCodeStep ? _verifyCode : _requestCode),
                             child: Text(
-                              _registerMode ? 'Создать аккаунт' : 'Войти',
+                              isCodeStep ? 'Войти' : 'Получить код',
                             ),
                           ),
                           const SizedBox(height: 10),
                           OutlinedButton(
-                            onPressed: () =>
-                                setState(() => _registerMode = !_registerMode),
+                            onPressed: _submitting
+                                ? null
+                                : (isCodeStep ? _requestCode : _clearForm),
                             child: Text(
-                              _registerMode
-                                  ? 'У меня уже есть аккаунт'
-                                  : 'Создать аккаунт',
+                              isCodeStep ? 'Отправить код еще раз' : 'Очистить',
                             ),
                           ),
+                          if (isCodeStep) ...[
+                            const SizedBox(height: 10),
+                            TextButton(
+                              onPressed: _submitting ? null : _backToEmail,
+                              child: const Text('Изменить почту'),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -131,19 +160,68 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Future<void> _submit() async {
+  Future<void> _requestCode() async {
     if (!_formKey.currentState!.validate()) return;
+    setState(() => _submitting = true);
     try {
-      await widget.controller.signIn(
+      final response = await widget.controller.requestSignInCode(
         email: _emailController.text,
-        password: _passwordController.text,
-        registerMode: _registerMode,
+      );
+      if (!mounted) return;
+      setState(() {
+        _codeRequested = true;
+        _debugCode = response.debugCode;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Код отправлен на почту')),
       );
     } on ApiException catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      _showError(error.message);
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
     }
+  }
+
+  Future<void> _verifyCode() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _submitting = true);
+    try {
+      await widget.controller.signInWithCode(
+        email: _emailController.text,
+        code: _codeController.text,
+      );
+    } on ApiException catch (error) {
+      _showError(error.message);
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  void _backToEmail() {
+    setState(() {
+      _codeRequested = false;
+      _codeController.clear();
+      _debugCode = null;
+    });
+  }
+
+  void _clearForm() {
+    _emailController.clear();
+    _codeController.clear();
+    setState(() {
+      _codeRequested = false;
+      _debugCode = null;
+    });
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 }

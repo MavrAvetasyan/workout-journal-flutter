@@ -27,6 +27,18 @@ class AuthResponse {
   final String userId;
 }
 
+class LoginCodeRequestResponse {
+  const LoginCodeRequestResponse({
+    required this.expiresInSeconds,
+    required this.nextRequestInSeconds,
+    this.debugCode,
+  });
+
+  final int expiresInSeconds;
+  final int nextRequestInSeconds;
+  final String? debugCode;
+}
+
 class SyncResponse {
   const SyncResponse({
     required this.workouts,
@@ -61,6 +73,39 @@ class ApiClient {
       return 'http://127.0.0.1:8000/api';
     }
     return 'http://10.0.2.2:8000/api';
+  }
+
+  Future<LoginCodeRequestResponse> requestLoginCode({
+    required String email,
+  }) async {
+    final json = await _send(
+      'POST',
+      '/auth/request-code',
+      body: {
+        'email': email.trim().toLowerCase(),
+      },
+    );
+    return LoginCodeRequestResponse(
+      expiresInSeconds: (json['expires_in_seconds'] as num?)?.toInt() ?? 600,
+      nextRequestInSeconds:
+          (json['next_request_in_seconds'] as num?)?.toInt() ?? 30,
+      debugCode: json['debug_code'] as String?,
+    );
+  }
+
+  Future<AuthResponse> verifyLoginCode({
+    required String email,
+    required String code,
+  }) async {
+    final json = await _send(
+      'POST',
+      '/auth/verify-code',
+      body: {
+        'email': email.trim().toLowerCase(),
+        'code': code.trim(),
+      },
+    );
+    return _parseAuthResponse(json);
   }
 
   Future<AuthResponse> register({

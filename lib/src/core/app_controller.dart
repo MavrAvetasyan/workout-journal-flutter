@@ -79,6 +79,41 @@ class AppController extends ChangeNotifier {
     await _persist(syncRemote: false);
   }
 
+  Future<LoginCodeRequestResponse> requestSignInCode({
+    required String email,
+  }) {
+    return api.requestLoginCode(email: email);
+  }
+
+  Future<void> signInWithCode({
+    required String email,
+    required String code,
+  }) async {
+    final localSnapshot = AppSnapshot(
+      workouts: _workouts,
+      exercises: _exercises,
+      measurements: _measurements,
+      auth: _auth,
+    );
+
+    final response = await api.verifyLoginCode(email: email, code: code);
+    _auth = AuthSession(
+      email: response.email,
+      isRegisterMode: false,
+      accessToken: response.token,
+      userId: response.userId,
+    );
+
+    final remote = await api.fetchSync(accessToken: response.token);
+    if (remote.isEmpty && _snapshotHasData(localSnapshot)) {
+      await _pushRemote();
+    } else {
+      _applyRemote(remote);
+    }
+
+    await _persist(syncRemote: false);
+  }
+
   Future<void> signOut() async {
     _auth = null;
     await _persist(syncRemote: false);
