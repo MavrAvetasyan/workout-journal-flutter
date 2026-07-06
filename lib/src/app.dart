@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'core/api_client.dart';
 import 'core/app_controller.dart';
 import 'core/app_storage.dart';
 import 'theme/app_theme.dart';
@@ -20,7 +21,10 @@ class _WorkoutJournalAppState extends State<WorkoutJournalApp> {
   @override
   void initState() {
     super.initState();
-    _controller = AppController(storage: AppStorage());
+    _controller = AppController(
+      storage: AppStorage(),
+      api: ApiClient(),
+    );
     _bootstrap = _controller.load();
   }
 

@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
+import 'api_client.dart';
 import 'app_storage.dart';
 import 'models.dart';
 
 class AppController extends ChangeNotifier {
-  AppController({required this.storage});
+  AppController({
+    required this.storage,
+    required this.api,
+  });
 
   final AppStorage storage;
+  final ApiClient api;
   final Uuid _uuid = const Uuid();
 
   AuthSession? _auth;
@@ -29,20 +34,54 @@ class AppController extends ChangeNotifier {
     _workouts = snapshot.workouts;
     _exercises = snapshot.exercises;
     _measurements = snapshot.measurements;
+
+    if (_hasRemoteSession) {
+      try {
+        await _pullRemote();
+      } catch (_) {
+        // Keep local data when the server is unreachable.
+      }
+    }
+
     notifyListeners();
   }
 
   Future<void> signIn({
     required String email,
+    required String password,
     required bool registerMode,
   }) async {
-    _auth = AuthSession(email: email.trim().toLowerCase(), isRegisterMode: registerMode);
-    await _persist();
+    final localSnapshot = AppSnapshot(
+      workouts: _workouts,
+      exercises: _exercises,
+      measurements: _measurements,
+      auth: _auth,
+    );
+
+    final response = registerMode
+        ? await api.register(email: email, password: password)
+        : await api.login(email: email, password: password);
+
+    _auth = AuthSession(
+      email: response.email,
+      isRegisterMode: registerMode,
+      accessToken: response.token,
+      userId: response.userId,
+    );
+
+    final remote = await api.fetchSync(accessToken: response.token);
+    if (remote.isEmpty && _snapshotHasData(localSnapshot)) {
+      await _pushRemote();
+    } else {
+      _applyRemote(remote);
+    }
+
+    await _persist(syncRemote: false);
   }
 
   Future<void> signOut() async {
     _auth = null;
-    await _persist();
+    await _persist(syncRemote: false);
   }
 
   Exercise? exerciseById(String id) {
@@ -99,7 +138,8 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> deleteMeasurement(String id) async {
-    _measurements = _measurements.where((item) => item.id != id).toList(growable: false);
+    _measurements =
+        _measurements.where((item) => item.id != id).toList(growable: false);
     await _persist();
   }
 
@@ -111,13 +151,19 @@ class AppController extends ChangeNotifier {
     } else {
       list.add(workout);
     }
-    list.sort((a, b) => (b.startTime ?? b.createdAt).compareTo(a.startTime ?? a.createdAt));
+    list.sort(
+      (a, b) => (b.startTime ?? b.createdAt).compareTo(
+        a.startTime ?? a.createdAt,
+      ),
+    );
     _workouts = list;
     await _persist();
   }
 
   Future<void> deleteWorkout(String id) async {
-    _workouts = _workouts.where((item) => item.id != id).toList(growable: false);
+    _workouts = _workouts.where((item) => item.id != id).toList(
+          growable: false,
+        );
     await _persist();
   }
 
@@ -125,7 +171,10 @@ class AppController extends ChangeNotifier {
     _workouts = _workouts.map((workout) {
       if (workout.id != id) {
         return workout.status == WorkoutStatus.active
-            ? workout.copyWith(status: WorkoutStatus.planned, updatedAt: DateTime.now())
+            ? workout.copyWith(
+                status: WorkoutStatus.planned,
+                updatedAt: DateTime.now(),
+              )
             : workout;
       }
       final startedAt = workout.actualStartTime ?? DateTime.now();
@@ -143,7 +192,8 @@ class AppController extends ChangeNotifier {
     _workouts = _workouts.map((workout) {
       if (workout.id != id) return workout;
       final end = DateTime.now();
-      final start = workout.actualStartTime ?? workout.scheduledStartTime ?? DateTime.now();
+      final start =
+          workout.actualStartTime ?? workout.scheduledStartTime ?? DateTime.now();
       final entries = workout.exercises
           .map(
             (entry) => entry.status == WorkoutEntryStatus.done
@@ -178,7 +228,8 @@ class AppController extends ChangeNotifier {
         if (entry.id != entryId) return entry;
         return entry.copyWith(
           status: status,
-          fact: status == WorkoutEntryStatus.done ? (entry.fact ?? entry.plan) : entry.fact,
+          fact:
+              status == WorkoutEntryStatus.done ? (entry.fact ?? entry.plan) : entry.fact,
         );
       }).toList(growable: false);
       return workout.copyWith(exercises: entries, updatedAt: DateTime.now());
@@ -232,7 +283,46 @@ class AppController extends ChangeNotifier {
 
   String nextId() => _uuid.v4();
 
-  Future<void> _persist() async {
+  bool get _hasRemoteSession =>
+      _auth != null && _auth!.accessToken.trim().isNotEmpty;
+
+  bool _snapshotHasData(AppSnapshot snapshot) {
+    return snapshot.workouts.isNotEmpty ||
+        snapshot.exercises.isNotEmpty ||
+        snapshot.measurements.isNotEmpty;
+  }
+
+  void _applyRemote(SyncResponse remote) {
+    _workouts = remote.workouts;
+    _exercises = remote.exercises;
+    _measurements = remote.measurements;
+  }
+
+  Future<void> _pullRemote() async {
+    final session = _auth;
+    if (session == null || session.accessToken.isEmpty) {
+      return;
+    }
+    final remote = await api.fetchSync(accessToken: session.accessToken);
+    _applyRemote(remote);
+    await _persist(syncRemote: false);
+  }
+
+  Future<void> _pushRemote() async {
+    final session = _auth;
+    if (session == null || session.accessToken.isEmpty) {
+      return;
+    }
+    final remote = await api.pushSync(
+      accessToken: session.accessToken,
+      workouts: _workouts,
+      exercises: _exercises,
+      measurements: _measurements,
+    );
+    _applyRemote(remote);
+  }
+
+  Future<void> _persist({bool syncRemote = true}) async {
     await storage.save(
       AppSnapshot(
         workouts: _workouts,
@@ -241,6 +331,23 @@ class AppController extends ChangeNotifier {
         auth: _auth,
       ),
     );
+
+    if (syncRemote && _hasRemoteSession) {
+      try {
+        await _pushRemote();
+        await storage.save(
+          AppSnapshot(
+            workouts: _workouts,
+            exercises: _exercises,
+            measurements: _measurements,
+            auth: _auth,
+          ),
+        );
+      } catch (_) {
+        // Local snapshot stays available offline.
+      }
+    }
+
     notifyListeners();
   }
 }

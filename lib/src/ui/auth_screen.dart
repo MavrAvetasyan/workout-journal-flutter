@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/api_client.dart';
 import '../core/app_controller.dart';
 import 'widgets/ui_bits.dart';
 
@@ -120,9 +121,17 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    await widget.controller.signIn(
-      email: _emailController.text,
-      registerMode: _registerMode,
-    );
+    try {
+      await widget.controller.signIn(
+        email: _emailController.text,
+        password: _passwordController.text,
+        registerMode: _registerMode,
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    }
   }
 }

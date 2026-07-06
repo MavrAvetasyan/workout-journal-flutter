@@ -43,20 +43,28 @@ class AuthSession {
   const AuthSession({
     required this.email,
     required this.isRegisterMode,
+    required this.accessToken,
+    required this.userId,
   });
 
   final String email;
   final bool isRegisterMode;
+  final String accessToken;
+  final String userId;
 
   Map<String, dynamic> toJson() => {
         'email': email,
         'isRegisterMode': isRegisterMode,
+        'accessToken': accessToken,
+        'userId': userId,
       };
 
   factory AuthSession.fromJson(Map<String, dynamic> json) {
     return AuthSession(
       email: json['email'] as String? ?? '',
       isRegisterMode: json['isRegisterMode'] as bool? ?? false,
+      accessToken: json['accessToken'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
     );
   }
 }
